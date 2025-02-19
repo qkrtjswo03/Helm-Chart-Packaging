@@ -27,8 +27,8 @@
 | Node-Exporter | DaemonSet | quay.io/prometheus/node-exporter | v1.8.2 | 노드별 시스템 메트릭 수집 (CPU, MEM, DISK 등) | 22.7MB |
 | Loki | StatefulSet | docker.io/grafana/loki | 2.9.4 | 로그 수집 및 저장 | 126MB |
 | Loki | StatefulSet | kiwigrid/k8s-sidecar | 1.24.3 | ConfigMap 을 감시하여 Loki 의 설정을 자동 업데이트 | 85.9MB |
-| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 |
-| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 |
+| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 | 193MB |
+| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 | 50MB |
 
 
 
