@@ -1,5 +1,3 @@
-![image.png](attachment:5deb100e-e328-47c3-abfa-bb829f059dcc:image.png)
-
 ---
 
 # 1. 테스트 환경
@@ -12,6 +10,28 @@
 | platform-monitoring-package-cluster-control-plane | control-plane |
 | platform-monitoring-package-cluster-worker |  |
 | platform-monitoring-package-cluster-worker2 |  |
+- Component List
+
+| 컴포넌트 이름 | K8s 오브젝트 | 이미지 레지스트리 | 버전 | 용도 | 컨테이너 이미지 사이즈 |
+| --- | --- | --- | --- | --- | --- |
+| Prometheus | StatefulSet | quay.io/prometheus/prometheus
+quay.io/prometheus-operator/prometheus-config-reloader | v2.55.1
+v0.78.2 | 모니터링 메트릭 수집 및 저장
+Prometheus 설정 변경 감지 및 자동 적용 | 285MB
+43.1MB |
+| Grafana | Deployment | docker.io/grafana/grafana
+quay.io/kiwigrid/k8s-sidecar | 11.3.1
+1.28.0 | 수집된 메트릭을 시각화하는 대시보드 
+ConfigMap을 감시하여 Grafana 대시보드 자동 업데이트  | 478MB
+85.9MB |
+| Node-Exporter | DaemonSet | quay.io/prometheus/node-exporter | v1.8.2 | 노드별 시스템 메트릭 수집 (CPU, MEM, DISK 등)  | 22.7MB |
+| Loki | StatefulSet | docker.io/grafana/loki
+kiwigrid/k8s-sidecar | 2.9.4
+1.24.3 | 로그 수집 및 저장
+ConfigMap 을 감시하여 Loki 의 설정을 자동 업데이트 | 126MB
+85.9MB |
+| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 | 193MB |
+| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 | 50MB |
 
 ---
 
@@ -115,15 +135,62 @@ $ helm install [릴리스 이름] kube-prometheus-stack-69.3.1.tgz --namespace m
 $ kubectl get pods -o jsonpath="{.items[*].spec.containers[*].image}" | tr ' ' '\n'
 quay.io/prometheus/alertmanager:v0.28.0
 quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2
+kiwigrid/k8s-sidecar:1.24.3
+docker.io/grafana/loki:2.9.4
+kiwigrid/k8s-sidecar:1.24.3
+docker.io/grafana/loki:2.9.4
+kiwigrid/k8s-sidecar:1.24.3
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki-canary:2.9.4
+docker.io/grafana/loki-canary:2.9.4
+docker.io/grafana/loki-canary:2.9.4
+docker.io/nginxinc/nginx-unprivileged:1.24-alpine
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki:2.9.4
+docker.io/grafana/loki:2.9.4
+quay.io/prometheus/prometheus:v2.55.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2
+docker.io/grafana/agent-operator:v0.39.1
 quay.io/kiwigrid/k8s-sidecar:1.28.0
 quay.io/kiwigrid/k8s-sidecar:1.28.0
 docker.io/grafana/grafana:11.3.1
-quay.io/prometheus-operator/prometheus-operator:v0.78.2
 registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.14.0
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
+quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
+grafana/agent:v0.39.1
 quay.io/prometheus/node-exporter:v1.8.2
 quay.io/prometheus/node-exporter:v1.8.2
-quay.io/prometheus/prometheus:v2.55.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2
+quay.io/prometheus/node-exporter:v1.8.2
+quay.io/prometheus/node-exporter:v1.8.2
+docker.io/grafana/promtail:3.0.0
+docker.io/grafana/promtail:3.0.0
+docker.io/grafana/promtail:3.0.0
+docker.io/grafana/promtail:3.0.0
+quay.io/prometheus-operator/prometheus-operator:v0.78.2
 ```
 
 ---
@@ -262,4 +329,3 @@ platform-promtail-svvg2                                     1/1     Running   0 
 ```
 
 ---
-
