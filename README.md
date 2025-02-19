@@ -1,40 +1,37 @@
 ---
 
-# 1. 테스트 환경
+ ##1. 테스트 환경
 
 - Kind version : kind v0.26.0 go1.23.4 darwin/arm64
 - kubernetes version : v1.30.2
 
+---
 | Name | ROLE |
 | --- | --- |
 | platform-monitoring-package-cluster-control-plane | control-plane |
-| platform-monitoring-package-cluster-worker |  |
-| platform-monitoring-package-cluster-worker2 |  |
-- Component List
+| platform-monitoring-package-cluster-worker  | Worker |
+| platform-monitoring-package-cluster-worker2 | Worker |
 
+
+
+
+- Component List
+---
 | 컴포넌트 이름 | K8s 오브젝트 | 이미지 레지스트리 | 버전 | 용도 | 컨테이너 이미지 사이즈 |
 | --- | --- | --- | --- | --- | --- |
-| Prometheus | StatefulSet | quay.io/prometheus/prometheus
-quay.io/prometheus-operator/prometheus-config-reloader | v2.55.1
-v0.78.2 | 모니터링 메트릭 수집 및 저장
-Prometheus 설정 변경 감지 및 자동 적용 | 285MB
-43.1MB |
-| Grafana | Deployment | docker.io/grafana/grafana
-quay.io/kiwigrid/k8s-sidecar | 11.3.1
-1.28.0 | 수집된 메트릭을 시각화하는 대시보드 
-ConfigMap을 감시하여 Grafana 대시보드 자동 업데이트  | 478MB
-85.9MB |
-| Node-Exporter | DaemonSet | quay.io/prometheus/node-exporter | v1.8.2 | 노드별 시스템 메트릭 수집 (CPU, MEM, DISK 등)  | 22.7MB |
-| Loki | StatefulSet | docker.io/grafana/loki
-kiwigrid/k8s-sidecar | 2.9.4
-1.24.3 | 로그 수집 및 저장
-ConfigMap 을 감시하여 Loki 의 설정을 자동 업데이트 | 126MB
-85.9MB |
-| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 | 193MB |
-| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 | 50MB |
+| Prometheus | StatefulSet | quay.io/prometheus/prometheus | v2.55.1 | 모니터링 메트릭 수집 및 저장 | 285MB |
+| Prometheus | StatefulSet | quay.io/prometheus-operator/prometheus-config-reloader | v0.78.2 | Prometheus 설정 변경 감지 및 자동 적용 | 43.1MB |
+| Grafana | Deployment | docker.io/grafana/grafana | 11.3.1 | 수집된 메트릭을 시각화하는 대시보드  | 478MB |
+| Grafana | Deployment | quay.io/kiwigrid/k8s-sidecar | 1.28.0 | ConfigMap을 감시하여 Grafana 대시보드 자동 업데이트 | 85.9MB |
+| Node-Exporter | DaemonSet | quay.io/prometheus/node-exporter | v1.8.2 | 노드별 시스템 메트릭 수집 (CPU, MEM, DISK 등) | 22.7MB |
+| Loki | StatefulSet | docker.io/grafana/loki | 2.9.4 | 로그 수집 및 저장 | 126MB |
+| Loki | StatefulSet | kiwigrid/k8s-sidecar | 1.24.3 | ConfigMap 을 감시하여 Loki 의 설정을 자동 업데이트 | 85.9MB |
+| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 |
+| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 |
+
+
 
 ---
-
 ## 1-1. Helm Chart 디렉토리 구조
 
 ```bash
