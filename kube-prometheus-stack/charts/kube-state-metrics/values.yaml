@@ -169,7 +169,13 @@ env: {}
 
 prometheus:
   monitor:
-    enabled: false
+    enabled: true
+    server:
+      service: 
+      type: NodePort
+      nodePort: 30090
+      port: 9090
+      
     annotations: {}
     additionalLabels: {}
     namespace: ""

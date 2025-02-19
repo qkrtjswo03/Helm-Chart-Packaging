@@ -20,5 +20,8 @@ dependencies:
 - name: promtail
   repository: file://charts/promtail
   version: 6.15.0
-digest: sha256:d58ab75e9fceb210a9db72b9cb673c55ca976f5fda154df4907013388a24136a
-generated: "2025-02-19T11:24:28.973823+09:00"
+- name: metrics-server
+  repository: file://charts/metrics-server
+  version: 3.8.0
+digest: sha256:4d06acbf31eb700aff268707829690694e185258faa77a2441361309446b69fc
+generated: "2025-02-19T17:42:26.73917+09:00"
