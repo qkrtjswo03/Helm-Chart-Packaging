@@ -1994,14 +1994,14 @@ kubeEtcd:
 
   ## Configure secure access to the etcd cluster by loading a secret into prometheus and
   ## specifying security configuration below. For example, with a secret named etcd-client-cert
-  ##
-  ## serviceMonitor:
-  ##   scheme: https
-  ##   insecureSkipVerify: false
-  ##   serverName: localhost
-  ##   caFile: /etc/prometheus/secrets/etcd-client-cert/etcd-ca
-  ##   certFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client
-  ##   keyFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client-key
+  
+  serviceMonitor:
+    scheme: https
+    insecureSkipVerify: false
+    serverName: localhost
+    caFile: /etc/prometheus/secrets/etcd-client-cert/etcd-ca
+    certFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client
+    keyFile: /etc/prometheus/secrets/etcd-client-cert/etcd-client-key
   ##
   serviceMonitor:
     enabled: true

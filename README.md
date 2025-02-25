@@ -327,3 +327,214 @@ platform-promtail-svvg2                                     1/1     Running   0 
 ```
 
 ---
+
+## 2-4. 커스텀 Json 파일 불러오기
+
+- 커스텀 한 Json 파일 : test-dasboard.json
+- 기본적으로 아래와 같이 대시보드 리스트가 출력 됌.
+
+![image.png](attachment:62b144f3-d9c1-4508-86b9-c4d6dfd4f8ae:image.png)
+
+---
+
+- Prometheus Helm Chart 내의 서브차트 Grafana 경로 : `kube-prometheus-stack/charts/grafana/`
+
+```bash
+$ ll
+total 240
+-rw-r--r--   1 user  staff   932B  2 24 17:33 Chart.yaml
+-rw-r--r--   1 user  staff    59K  2 24 17:33 README.md
+drwxr-xr-x  11 user  staff   352B  2 24 17:33 ci
+drwxr-xr-x   4 user  staff   128B  2 25 10:26 dashboards. # 커스텀 Json 파일 or 자동으로 불러오고 싶은 Json 파일을 넣어준다.
+drwxr-xr-x  36 user  staff   1.1K  2 24 17:33 templates
+-rw-r--r--   1 user  staff    53K  2 25 10:42 values.yaml # 실제 옵션값 등을 설정하는 파일이다.
+```
+
+---
+
+- vi values.yaml
+    - sample yaml
+
+```yaml
+# 폴더 생성 할때 적용
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+    - name: 'test-dashboard' # 프로바이더의 고유 이름 (ConfigMap 이름과 관련됨)
+      orgId: 1. 
+      folder: TEST  # Grafana UI에서 대시보드가 저장될 폴더명
+      type: file
+      disableDeletion: false
+      editable: true
+      options:
+        path: /var/lib/grafana/dashboards/test-dashboard   # Grafana 컨테이너 내부에서 대시보드를 찾을 경로
+      
+# JSON을 기본적으로 불러올때 적용  
+dashboards: 
+  test-dashboard: # ConfigMap의 이름이 될 값 (RFC 1123 규칙을 따르므로 소문자 사용)
+    TEST:  # Grafana에서 폴더명 (위 `folder: TEST`와 매칭됨)
+      file: dashboards/test/test-dashboard.json  # 대시보드 JSON 파일의 경로 (Helm Chart 내 상대 경로)
+```
+
+- 실제 yaml
+
+```yaml
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'kubernetes-basic'
+        orgId: 1
+        folder: '1.Kubernetes Basic Component'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes-basic
+      - name: 'platform-component'
+        orgId: 1
+        folder: '2.Platform Component'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/platform-component
+      - name: 'pv-and-pvc'
+        orgId: 1
+        folder: '3.PV And PVC'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/pv-and-pvc
+      - name: 'read-write-io'
+        orgId: 1
+        folder: '4.Read,Write IO'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/read-write-io
+      - name: 'log-monitoring'
+        orgId: 1
+        folder: '5.Log Monitoring'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/log-monitoring
+
+dadashboards:
+  kubernetes-basic:
+    cni-cilium:
+      file: dashboards/1_Kubernetes_basic_component/1_CNI_cilium/_Platform Monitoring - CNI Cilium-1736922127493.json
+    kubernetes-components-etcd:
+      file: dashboards/1_Kubernetes_basic_component/2_Kubernetes_Components&ETCD/Platform Monitoring - Kubernetes Components _ ETCD-1736922182325.json
+    node:
+      file: dashboards/1_Kubernetes_basic_component/3_Node/Platform Monitoring - Node-1736922218337.json
+  platform-component:
+    platform-service-monitoring:
+      file: dashboards/2_Platform_Component/Platform-Service-Mornitoring-0114.json
+  pv-and-pvc:
+    persistent-volume:
+      file: dashboards/3_PV_And_PVC/Platform Persistent Volume-1736831599206.json
+  read-write-io:
+    disk-io:
+      file: dashboards/4_Read,Write_IO/Disk I_O-1736831654928.json
+  log-monitoring:
+    kubernetes-pod-log:
+      file: dashboards/5_LogMonitoring/Kubernetes_Pod_Log/Kubernetes Pod Log-1736929150756.json
+    pod-dashboard:
+      file: dashboards/5_LogMonitoring/pod-dashboard-1736831697142.json
+```
+
+---
+
+- value.yaml 수정 후 패키징
+
+```yaml
+# 패키징 
+$ helm package .
+Successfully packaged chart and saved it to: /Users/user/work/Helm/Helm-Chart-package/kube-prometheus-stack/charts/grafana/grafana-8.9.1.tgz
+
+# tgz 파일 생성 된 거 확인 
+$ ls | grep grafana-8.9.1.tgz
+grafana-8.9.1.tgz
+
+# 상위 경로로 이동
+$ mv grafana-8.9.1.tgz ..
+
+$ cd ..
+$ ll
+total 632
+drwxr-xr-x   7 user  staff   224B  2 24 17:33 crds
+drwxr-xr-x  10 user  staff   320B  2 25 11:09 grafana
+-rw-r--r--   1 user  staff    55K  2 25 10:42 grafana-8.9.1.tgz
+drwxr-xr-x   7 user  staff   224B  2 24 17:33 kube-state-metrics
+-rw-r--r--   1 user  staff    14K  2 24 17:33 kube-state-metrics-5.29.0.tgz
+drwxr-xr-x  13 user  staff   416B  2 24 17:33 loki
+-rw-r--r--   1 user  staff   185K  2 24 17:33 loki-5.43.0.tgz
+drwxr-xr-x   8 user  staff   256B  2 24 17:33 metrics-server
+-rw-r--r--   1 user  staff   6.1K  2 24 17:33 metrics-server-3.8.0.tgz
+drwxr-xr-x   8 user  staff   256B  2 24 17:33 prometheus-node-exporter
+-rw-r--r--   1 user  staff    20K  2 24 17:33 prometheus-node-exporter-4.43.1.tgz
+drwxr-xr-x   9 user  staff   288B  2 24 17:33 promtail
+-rw-r--r--   1 user  staff    17K  2 24 17:33 promtail-6.15.0.tgz
+
+# 이렇게 하는 이유는 helm chart 는 tgz 파일을 읽어들이기 떄문
+```
+
+---
+
+- 최상위 경로(`kube-prometheus-stack`) 의 value.yaml 이 있는곳에서 helm install
+
+```yaml
+$ helm install prometheus . 
+NAME: prometheus
+LAST DEPLOYED: Tue Feb 25 11:12:20 2025
+NAMESPACE: monitoring
+STATUS: deployed
+REVISION: 1
+NOTES:
+platform-prometheus-stack has been installed. Check its status by running:
+  kubectl --namespace monitoring get pods -l "release=prometheus"
+
+Get Grafana 'admin' user password by running:
+
+  kubectl --namespace monitoring get secrets prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
+
+Access Grafana local instance:
+
+  export POD_NAME=$(kubectl --namespace monitoring get pod -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=prometheus" -oname)
+  kubectl --namespace monitoring port-forward $POD_NAME 3000
+
+Visit https://github.com/prometheus-operator/kube-prometheus for instructions on how to create & configure Alertmanager and Prometheus instances using the Operator.
+
+# 헬름 설치 완료 및 조회 
+$ helm list
+NAME      	NAMESPACE 	REVISION	UPDATED                            	STATUS  	CHART                        	APP VERSION
+prometheus	monitoring	1       	2025-02-25 11:12:20.66148 +0900 KST	deployed	platform-prometheus-stack-69.3.1	v0.80.0
+```
+
+---
+
+- 그라파나 포트포워딩
+
+```bash
+$ kubectl get svc -n monitoring | grep grafana
+prometheus-grafana                        ClusterIP   10.96.194.145   <none>        80/TCP                       95s
+
+# grafana 포트가 80 이므로 3000으로 받아서 80으로 보내도록 
+$ kubectl port-forward svc/prometheus-grafana 3000:80
+Forwarding from 127.0.0.1:3000 -> 3000
+Forwarding from [::1]:3000 -> 3000
+```
+
+---
+
+- 그라파나 접속 후 대시보드 확인
+    - TEST 폴더 생성 확인 및 하위에 JSON 파일 확인 가능
+
+![image.png](attachment:5786fa88-8d39-461b-87e0-5c4eb66ff7f6:image.png)
+
