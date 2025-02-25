@@ -535,6 +535,3 @@ Forwarding from [::1]:3000 -> 3000
 
 - 그라파나 접속 후 대시보드 확인
     - TEST 폴더 생성 확인 및 하위에 JSON 파일 확인 가능
-
-![image.png](attachment:5786fa88-8d39-461b-87e0-5c4eb66ff7f6:image.png)
-
