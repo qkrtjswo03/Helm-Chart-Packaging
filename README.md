@@ -1,537 +1,294 @@
+# platform-prometheus-stack
 
+[![Helm chart](https://img.shields.io/badge/Helm-platform--prometheus--stack%2069.3.1-0F1689?logo=helm&logoColor=white)](https://helm.sh)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-%3E%3D1.19.0-326CE5?logo=kubernetes&logoColor=white)](https://kubernetes.io)
+[![Prometheus](https://img.shields.io/badge/Prometheus-v2.55.1-E6522C?logo=prometheus&logoColor=white)](https://prometheus.io)
+[![Prometheus Operator](https://img.shields.io/badge/Prometheus%20Operator-v0.78.2-E6522C?logo=prometheus&logoColor=white)](https://github.com/prometheus-operator/prometheus-operator)
+[![Grafana](https://img.shields.io/badge/Grafana-11.3.1-F46800?logo=grafana&logoColor=white)](https://grafana.com)
+[![Loki](https://img.shields.io/badge/Loki-2.9.4-F46800?logo=grafana&logoColor=white)](https://grafana.com/oss/loki/)
+[![Promtail](https://img.shields.io/badge/Promtail-3.0.0-F46800?logo=grafana&logoColor=white)](https://grafana.com/docs/loki/latest/send-data/promtail/)
 
+kube-prometheus-stack에 Loki, Promtail, metrics-server를 로컬 서브차트로 묶고, Grafana에 커스텀 대시보드 JSON을 넣은 Helm 차트입니다.
 
+차트 이름은 `platform-prometheus-stack`, 버전은 `69.3.1`, `Chart.yaml`의 `appVersion`은 `v0.80.0`입니다. 기반은 [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts)과 [Prometheus Operator](https://github.com/prometheus-operator/kube-prometheus)입니다.
 
-## 1. 테스트 환경
-- Kind version : kind v0.26.0 go1.23.4 darwin/arm64
-- kubernetes version : v1.30.2
+## 배경과 목적
 
----
-| Name | ROLE |
-| --- | --- |
-| platform-monitoring-package-cluster-control-plane | control-plane |
-| platform-monitoring-package-cluster-worker  | Worker |
-| platform-monitoring-package-cluster-worker2 | Worker |
+Kubernetes 클러스터의 메트릭 수집과 로그 수집을 한 차트 디렉터리에서 설치하기 위한 패키징입니다.
 
+업스트림 `kube-prometheus-stack`을 받아 서브차트를 `charts/`에 풀어 두고, `Chart.yaml` 의존성을 `file://`로 고정했습니다. 그 위에 Grafana Helm 차트의 Loki `5.43.0`, Promtail `6.15.0`, metrics-server `3.8.0`을 의존성으로 추가했습니다. Grafana 서브차트에는 대시보드 JSON 하나를 file provisioning으로 연결했습니다.
 
+이 저장소는 차트 소스와 작업 중 남긴 설치 명령을 담습니다. CI, Kind 설정 파일, 설치 결과 스크린샷은 없습니다.
 
+## 구성
 
-- Component List
----
-| 컴포넌트 이름 | K8s 오브젝트 | 이미지 레지스트리 | 버전 | 용도 | 컨테이너 이미지 사이즈 |
-| --- | --- | --- | --- | --- | --- |
-| Prometheus | StatefulSet | quay.io/prometheus/prometheus | v2.55.1 | 모니터링 메트릭 수집 및 저장 | 285MB |
-| Prometheus | StatefulSet | quay.io/prometheus-operator/prometheus-config-reloader | v0.78.2 | Prometheus 설정 변경 감지 및 자동 적용 | 43.1MB |
-| Grafana | Deployment | docker.io/grafana/grafana | 11.3.1 | 수집된 메트릭을 시각화하는 대시보드  | 478MB |
-| Grafana | Deployment | quay.io/kiwigrid/k8s-sidecar | 1.28.0 | ConfigMap을 감시하여 Grafana 대시보드 자동 업데이트 | 85.9MB |
-| Node-Exporter | DaemonSet | quay.io/prometheus/node-exporter | v1.8.2 | 노드별 시스템 메트릭 수집 (CPU, MEM, DISK 등) | 22.7MB |
-| Loki | StatefulSet | docker.io/grafana/loki | 2.9.4 | 로그 수집 및 저장 | 126MB |
-| Loki | StatefulSet | kiwigrid/k8s-sidecar | 1.24.3 | ConfigMap 을 감시하여 Loki 의 설정을 자동 업데이트 | 85.9MB |
-| Promtail | DaemonSet | docker.io/grafana/promtail | 3.0.0 | Loki 로 로그를 전송하는 에이전트 | 193MB |
-| Kube-State-Metrics | Deployment | registry.k8s.io/kube-state-metrics/kube-state-metrics | v2.14.0 | kubernetes 리소스 상태 메트릭 제공 | 50MB |
+메트릭은 Prometheus Operator가 Prometheus와 Alertmanager를 만들고, node-exporter와 kube-state-metrics, Kubernetes 컴포넌트 ServiceMonitor가 Prometheus로 들어옵니다. Grafana datasource sidecar는 Prometheus와 Alertmanager를 기본 datasource로 등록합니다.
 
+로그는 Promtail DaemonSet이 `loki-gateway` Service로 보내고, Loki는 read / write / backend로 나뉩니다. 부모 `values.yaml`에는 Loki datasource 정의가 없습니다.
 
+```mermaid
+flowchart LR
+  subgraph metrics [Metrics]
+    NE[node-exporter]
+    KSM[kube-state-metrics]
+    KS[kube-apiserver, kubelet, CoreDNS 등]
+    PO[Prometheus Operator]
+    PR[Prometheus]
+    AM[Alertmanager]
+    NE --> PR
+    KSM --> PR
+    KS --> PR
+    PO --> PR
+    PO --> AM
+  end
 
----
-## 1-1. Helm Chart 디렉토리 구조
+  subgraph logs [Logs]
+    PT[Promtail DaemonSet]
+    GW[loki-gateway]
+    LK[Loki read / write / backend]
+    PT --> GW --> LK
+  end
 
-```bash
-kube-prometheus-stack/                        # 최상위 Helm Chart 디렉토리
-├── charts/                                   # 서브차트들이 저장되는 디렉토리
-│   ├── crds/                                 # Custom Resource Definitions (CRDs)
-│   ├── grafana/                              # Grafana 서브차트 (압축 해제된 상태)
-│   │   └── Chart.yaml                        # Grafana Helm Chart 메타데이터
-│   ├── grafana-8.9.1.tgz                     # Grafana 서브차트 (압축 파일)
-│   ├── kube-state-metrics/                   # kube-state-metrics 서브차트
-│   │   └── Chart.yaml
-│   ├── kube-state-metrics-5.29.0.tgz         # kube-state-metrics 서브차트 (압축 파일)
-│   ├── loki/                                 # Loki 서브차트 (압축 해제된 상태)
-│   │   └── Chart.yaml
-│   ├── loki-5.43.0.tgz                       # Loki 서브차트 (압축 파일)
-│   ├── prometheus-node-exporter/             # Node Exporter 서브차트
-│   │   └── Chart.yaml
-│   ├── prometheus-node-exporter-4.43.1.tgz   # Node Exporter 서브차트 (압축 파일)
-│   ├── prometheus-windows-exporter/          # Windows Exporter 서브차트
-│   │   └── Chart.yaml
-│   ├── prometheus-windows-exporter-0.8.0.tgz # Windows Exporter 서브차트 (압축 파일)
-│   ├── promtail/                             # Promtail 서브차트 (압축 해제된 상태)
-│   │   └── Chart.yaml
-│   └── promtail-6.15.0.tgz                   # Promtail 서브차트 (압축 파일)
-├── templates/                                # Kubernetes 리소스 템플릿
-│   ├── _helpers.tpl                          # 템플릿 헬퍼 함수
-│   └── deployment.yaml                       # 예시: 배포 매니페스트
-├── values.yaml                               # 기본 values 파일 (전체 스택 설정)
-├── Chart.yaml                                # kube-prometheus-stack 메타데이터
-├── .helmignore                               # 제외할 파일 목록
-└── README.md                                 # 프로젝트 설명
-
+  PR --> GF[Grafana]
+  AM --> GF
 ```
 
----
+`metrics-server` 서브차트는 의존성에 포함되어 있습니다. 자체 `serviceMonitor.enabled`는 `false`입니다. `prometheus-windows-exporter`도 차트에 있지만 부모 값 `windowsMonitoring.enabled`가 `false`라 기본 설치에서는 빠집니다. ThanosRuler 이미지 태그는 values에 있으나 `thanosRuler.enabled`는 `false`입니다.
 
-# 2. 본 작업
+### 차트에 적힌 버전
 
-## **2-1. 저장소 정보 가져오기 (Prometheus)**
+이미지 크기나 런타임 측정값은 차트에 없습니다. 아래는 `Chart.yaml`, `Chart.lock`, 각 `values.yaml`에 있는 태그입니다.
 
-- Helm의 공식 Grafana 차트를 사용할 거야. 먼저, Helm 리포를 추가하고 업데이트해.
+| 구성 | 워크로드 | 이미지 | 차트 |
+| --- | --- | --- | --- |
+| Prometheus Operator | Deployment | `quay.io/prometheus-operator/prometheus-operator:v0.78.2` | 부모 차트 `69.3.1` (`appVersion`은 `v0.80.0`) |
+| Prometheus config reloader | Operator가 주입 | `quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2` | 같은 부모 values |
+| Prometheus | Prometheus CR, replicas 1, retention `10d` | `quay.io/prometheus/prometheus:v2.55.1` | 부모 values. `storageSpec`은 비어 있음 |
+| Alertmanager | Alertmanager CR, replicas 1, retention `120h` | `quay.io/prometheus/alertmanager:v0.28.0` | 부모 values |
+| Grafana | Deployment. Service `80` → container `3000` | `docker.io/grafana/grafana:11.3.1` | grafana `8.9.1` |
+| Grafana sidecar | Grafana Pod의 sidecar | `quay.io/kiwigrid/k8s-sidecar:1.28.0` | grafana values |
+| node-exporter | DaemonSet | `quay.io/prometheus/node-exporter:v1.8.2` | prometheus-node-exporter `4.43.1` |
+| kube-state-metrics | Deployment | `registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.14.0` | kube-state-metrics `5.29.0` |
+| Loki | read Deployment, write/backend StatefulSet. 각 replicas 3 | `docker.io/grafana/loki:2.9.4` (`tag`가 비어 있어 chart `appVersion`) | loki `5.43.0` |
+| Loki gateway | Deployment, replicas 1 | `docker.io/nginxinc/nginx-unprivileged:1.24-alpine` | loki values |
+| Loki sidecar | Loki Pod sidecar | `kiwigrid/k8s-sidecar:1.24.3` | loki values |
+| Loki canary | DaemonSet. `monitoring.lokiCanary.enabled: true` | `docker.io/grafana/loki-canary`, tag는 chart `appVersion` `2.9.4` | loki values |
+| Grafana Agent Operator | Loki self-monitoring. `installOperator: true` | `grafana/agent-operator:v0.39.1` | grafana-agent-operator `0.3.15` |
+| Promtail | DaemonSet | `docker.io/grafana/promtail:3.0.0` | promtail `6.15.0`. chart `appVersion`은 `2.8.3` |
+| metrics-server | Deployment, replicas 1 | `k8s.gcr.io/metrics-server/metrics-server:v0.6.0` | metrics-server `3.8.0` |
 
-```bash
-$ helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-"grafana" has been added to your repositories
+Loki 차트 설명은 simple scalable mode입니다. `singleBinary.replicas`는 `0`, `read.legacyReadTarget`은 `false`입니다. `commonConfig.replication_factor`는 `3`이고 write/read/backend PVC는 각 `10Gi`입니다.
 
-$ helm repo update
+## 디렉터리 구조
+
+최상위는 README와 차트 디렉터리뿐입니다. 서브차트는 풀린 디렉터리와 `.tgz`가 같이 있습니다. 부모 차트 패키지 `platform-prometheus-stack-69.3.1.tgz`는 현재 트리에 없습니다.
+
+```text
+.
+├── README.md
+└── kube-prometheus-stack/
+    ├── Chart.yaml          # name: platform-prometheus-stack, version: 69.3.1
+    ├── Chart.lock          # generated: 2025-02-19
+    ├── values.yaml
+    ├── .helmignore
+    ├── templates/          # Operator, Prometheus, Alertmanager, exporter ServiceMonitor, 기본 Grafana 대시보드/룰
+    │   ├── alertmanager/
+    │   ├── exporters/      # kube-apiserver, kubelet, kube-proxy, kube-scheduler, kube-controller-manager, kube-etcd, CoreDNS, kube-dns
+    │   ├── grafana/
+    │   ├── prometheus/
+    │   ├── prometheus-operator/
+    │   └── thanos-ruler/
+    └── charts/
+        ├── crds/
+        ├── grafana/                      # dashboards/test/test-dashboard.json
+        ├── grafana-8.9.1.tgz
+        ├── kube-state-metrics/
+        ├── kube-state-metrics-5.29.0.tgz
+        ├── loki/                         # charts/ 아래 grafana-agent-operator, minio
+        ├── loki-5.43.0.tgz
+        ├── metrics-server/
+        ├── metrics-server-3.8.0.tgz
+        ├── prometheus-node-exporter/
+        ├── prometheus-node-exporter-4.43.1.tgz
+        ├── prometheus-windows-exporter/
+        ├── prometheus-windows-exporter-0.8.0.tgz
+        ├── promtail/
+        └── promtail-6.15.0.tgz
 ```
 
----
+`Chart.yaml` 의존성입니다. `crds`만 repository가 비어 있고, 나머지는 `file://charts/<name>`입니다.
 
-- Helm 차트 커스터마이징 할 수 있도록 새로운 디렉토리를 만들고 이동 (`prometheus-community/kube-prometheus-stack`)
+| name | version | condition |
+| --- | --- | --- |
+| crds | `0.0.0` | `crds.enabled` |
+| kube-state-metrics | `5.29.*` (lock `5.29.0`) | `kubeStateMetrics.enabled` |
+| prometheus-node-exporter | `4.43.*` (lock `4.43.1`) | `nodeExporter.enabled` |
+| grafana | `8.9.*` (lock `8.9.1`) | `grafana.enabled` |
+| prometheus-windows-exporter | `0.8.*` (lock `0.8.0`) | `windowsMonitoring.enabled` |
+| loki | `5.43.0` | `loki.enabled` |
+| promtail | `6.15.0` | `promtail.enabled` |
+| metrics-server | `3.8.0` | `metrics-server.enabled` |
 
-```bash
-$ helm pull prometheus-community/kube-prometheus-stack --untar
-$ cd prometheus-community/kube-prometheus-stack
+부모 `values.yaml`은 `kubeStateMetrics.enabled`, `nodeExporter.enabled`, `grafana.enabled`를 `true`로 두고 `windowsMonitoring.enabled`를 `false`로 둡니다. `loki`, `promtail`, `metrics-server` 키는 부모 values에 없습니다.
 
-$ ls -al
-total 0
-drwxr-xr-x  7 user  staff  224  2 18 11:11 .
-drwxr-xr-x  9 user  staff  288  2 18 11:37 ..
-drwxr-xr-x  7 user  staff  224  2 18 11:11 crds
-drwxr-xr-x  9 user  staff  288  2 18 11:36 grafana
-drwxr-xr-x  7 user  staff  224  2 18 11:29 kube-state-metrics
-drwxr-xr-x  8 user  staff  256  2 18 11:31 prometheus-node-exporter
-drwxr-xr-x  7 user  staff  224  2 18 11:11 prometheus-windows-exporter
-```
+## 사전 요구 사항
 
----
+- Kubernetes `>=1.19.0-0` (`Chart.yaml` `kubeVersion`)
+- Helm 3. 차트 `apiVersion`은 `v2`입니다.
+- Loki write/read/backend가 PVC `10Gi`를 요청합니다. `storageClass`는 `null`이라 클러스터 기본 StorageClass를 사용합니다. Prometheus `storageSpec`은 비어 있습니다.
+- 원격 차트를 다시 받을 때만 Helm repo가 필요합니다. 이 트리의 의존성은 이미 `charts/`에 있습니다.
 
-```bash
-$ helm show values prometheus-community/kube-prometheus-stack > values.yaml
-```
+작업 메모에 남은 테스트 환경은 Kind `v0.26.0` (`go1.23.4`, `darwin/arm64`)과 Kubernetes `v1.30.2`입니다. Kind 설정 파일은 저장소에 없습니다.
 
----
+## 설치와 사용
 
-## 2-2. Helm Chart 패키징
+명령은 저장소에 적혀 있던 절차입니다. 메모에는 서로 다른 설치가 섞여 있습니다. 아래는 그 차이를 유지한 채, 지금 트리에서 실행할 수 있는 순서로 정리한 것입니다.
 
-```bash
-$ helm package . 
-Successfully packaged chart and saved it to: /Users/user/work/Helm/kube-prometheus-stack/kube-prometheus-stack-69.3.1.tgz
-```
-
----
-
-- 패키징 된 파일로 설치
+### 1. 이 저장소의 차트 배포
 
 ```bash
-$ helm install [릴리스 이름] kube-prometheus-stack-69.3.1.tgz --namespace monitoring --create-namespace
-
+cd kube-prometheus-stack
+helm dependency list
+helm install prometheus . --namespace monitoring --create-namespace
 ```
 
----
-
-- JSON 출력으로 모든 Pod 이미지 확인
+메모에 남은 디렉터리 설치 명령은 namespace 플래그 없이 `helm install prometheus .`입니다. 그 출력의 namespace는 `monitoring`, revision은 `1`, chart는 `platform-prometheus-stack-69.3.1`, app version은 `v0.80.0`이었습니다. namespace를 만드는 플래그는 다른 줄의 tgz 설치 명령에 있었습니다.
 
 ```bash
-$ kubectl get pods -o jsonpath="{.items[*].spec.containers[*].image}" | tr ' ' '\n'
-quay.io/prometheus/alertmanager:v0.28.0
-quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2
-kiwigrid/k8s-sidecar:1.24.3
-docker.io/grafana/loki:2.9.4
-kiwigrid/k8s-sidecar:1.24.3
-docker.io/grafana/loki:2.9.4
-kiwigrid/k8s-sidecar:1.24.3
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki-canary:2.9.4
-docker.io/grafana/loki-canary:2.9.4
-docker.io/grafana/loki-canary:2.9.4
-docker.io/nginxinc/nginx-unprivileged:1.24-alpine
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki:2.9.4
-docker.io/grafana/loki:2.9.4
-quay.io/prometheus/prometheus:v2.55.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.78.2
-docker.io/grafana/agent-operator:v0.39.1
-quay.io/kiwigrid/k8s-sidecar:1.28.0
-quay.io/kiwigrid/k8s-sidecar:1.28.0
-docker.io/grafana/grafana:11.3.1
-registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.14.0
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus-operator/prometheus-config-reloader:v0.67.1
-grafana/agent:v0.39.1
-quay.io/prometheus/node-exporter:v1.8.2
-quay.io/prometheus/node-exporter:v1.8.2
-quay.io/prometheus/node-exporter:v1.8.2
-quay.io/prometheus/node-exporter:v1.8.2
-docker.io/grafana/promtail:3.0.0
-docker.io/grafana/promtail:3.0.0
-docker.io/grafana/promtail:3.0.0
-docker.io/grafana/promtail:3.0.0
-quay.io/prometheus-operator/prometheus-operator:v0.78.2
+helm install platform-monitoring kube-prometheus-stack-69.3.1.tgz --namespace monitoring --create-namespace
 ```
 
----
+지금 `Chart.yaml`의 `name`은 `platform-prometheus-stack`입니다. `kube-prometheus-stack/`에서 `helm package .`를 하면 파일 이름은 `platform-prometheus-stack-69.3.1.tgz`입니다. 메모 앞부분의 `kube-prometheus-stack-69.3.1.tgz`는 차트 이름을 바꾸기 전 패키지 이름으로 보입니다. 그 tgz는 현재 트리에 없습니다.
 
-- `kube-prometheus-stack/Chart.yaml`  수정 (Loki & Promtail 추가)
-    - 보통 서브차트는 원격 Helm Chart 레지스트리(Grafana Helm Repo 등)에서 가져오지만, `file://` 프로토콜을 사용하면 **로컬 파일 시스템의 특정 경로에서 서브차트를 가져온다.**
+패키지한 뒤 상태를 볼 때 메모에 있던 명령입니다.
 
 ```bash
-dependencies:
-- condition: crds.enabled
-  name: crds
-  repository: ""
-  version: 0.0.0
-- condition: kubeStateMetrics.enabled
-  name: kube-state-metrics
-  repository: file://charts/kube-state-metrics
-  version: 5.29.*
-- condition: nodeExporter.enabled
-  name: prometheus-node-exporter
-  repository: file://charts/prometheus-node-exporter
-  version: 4.43.*
-- condition: grafana.enabled
-  name: grafana
-  repository: file://charts/grafana
-  version: 8.9.*
-- condition: windowsMonitoring.enabled
-  name: prometheus-windows-exporter
-  repository: file://charts/prometheus-windows-exporter
-  version: 0.8.*
-- condition: loki.enabled
-  name: loki
-  repository: file://charts/loki
-  version: 5.43.0
-- condition: promtail.enabled
-  name: promtail
-  repository: file://charts/promtail
-  version: 6.15.0
+helm package .
+helm list
+kubectl get pods -n monitoring
+watch -d 'kubectl get pods'
+kubectl get pods -o jsonpath="{.items[*].spec.containers[*].image}" | tr ' ' '\n'
 ```
 
-위 설정에서 **각 필드의 의미**는 다음과 같아:
+### 2. 업스트림 차트를 다시 받을 때
 
-| 필드 | 설명 |
-| --- | --- |
-| `name` | 서브차트 이름 (`loki`) |
-| `version` | 사용할 서브차트의 버전 (`5.43.0`) |
-| `repository` | 서브차트의 위치 (`file://charts/loki` → 로컬 경로) |
-
-즉, `charts/loki` 디렉터리에 `loki` 서브차트가 있어야 `helm dependency update`를 실행할 때 해당 서브차트를 올바르게 인식할 수 있어.
-
----
-
-## **2-3. Helm 의존성 업데이트**
-
-- `loki` 와 `Promtail` 이 Helm 차트에 추가 되었기때문에 `helm dependency update`를 실행해서 Loki와 Promtail 차트 가져오기
+이미 vendoring된 트리를 설치할 때는 거치지 않습니다. 메모에 있던 가져오기 명령입니다.
 
 ```bash
-$ cd kube-prometheus-stack
-
-$ helm dependency update
-Hang tight while we grab the latest from your chart repositories...
-...Successfully got an update from the "karmada" chart repository
-...Successfully got an update from the "grafana" chart repository
-...Successfully got an update from the "prometheus-community" chart repository
-Update Complete. ⎈Happy Helming!⎈
-Saving 7 charts
-Dependency crds did not declare a repository. Assuming it exists in the charts directory
-Downloading kube-state-metrics from repo https://prometheus-community.github.io/helm-charts
-Downloading prometheus-node-exporter from repo https://prometheus-community.github.io/helm-charts
-Downloading grafana from repo https://grafana.github.io/helm-charts
-Downloading prometheus-windows-exporter from repo https://prometheus-community.github.io/helm-charts
-Downloading loki from repo https://grafana.github.io/helm-charts
-Downloading promtail from repo https://grafana.github.io/helm-charts
-Deleting outdated charts
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm pull prometheus-community/kube-prometheus-stack --untar
+helm show values prometheus-community/kube-prometheus-stack > values.yaml
 ```
+
+Loki와 Promtail을 넣은 뒤 메모에 있던 의존성 명령입니다.
 
 ```bash
-$ helm dependency list
-NAME                       	VERSION	REPOSITORY                                        	STATUS
-crds                       	0.0.0  	                                                  	unpacked
-kube-state-metrics         	5.29.* 	https://prometheus-community.github.io/helm-charts	ok
-prometheus-node-exporter   	4.43.* 	https://prometheus-community.github.io/helm-charts	ok
-grafana                    	8.9.*  	https://grafana.github.io/helm-charts             	ok
-prometheus-windows-exporter	0.8.*  	https://prometheus-community.github.io/helm-charts	ok
-loki                       	5.43.0 	https://grafana.github.io/helm-charts             	ok
-promtail                   	6.15.0 	https://grafana.github.io/helm-charts             	ok
+cd kube-prometheus-stack
+helm dependency update
+helm dependency list
 ```
 
----
+그 `helm dependency list` 출력은 `kube-state-metrics`, `prometheus-node-exporter`, `grafana`, `prometheus-windows-exporter`, `loki`, `promtail`의 repository가 `https://prometheus-community.github.io/helm-charts` 또는 `https://grafana.github.io/helm-charts`로 되어 있습니다. 지금 커밋된 `Chart.yaml`과 `Chart.lock`의 repository는 `file://charts/...`입니다. metrics-server는 그 목록 출력에 없고, 이후 커밋에서 `Chart.yaml`에 추가되어 있습니다.
 
-- **Helm으로 배포**
-    - Loki와 Promtail이 포함된 `kube-prometheus-stack`을 배포
+### 3. Grafana 접속
+
+메모의 release 이름이 `prometheus`일 때 사용한 명령입니다. release 이름이 다르면 Secret과 Service 이름도 달라집니다.
 
 ```bash
-$ helm package . 
-$ helm install platform-monitoring kube-prometheus-stack-69.3.1.tgz --namespace monitoring --create-namespace
+kubectl --namespace monitoring get secrets prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
+
+kubectl get svc -n monitoring | grep grafana
+kubectl port-forward svc/prometheus-grafana 3000:80
 ```
 
----
+Grafana Service 포트는 `80`, container `targetPort`는 `3000`입니다. 위 port-forward는 로컬 `3000`을 Service 포트 `80`에 붙입니다. 메모의 출력은 `Forwarding from 127.0.0.1:3000 -> 3000`이었습니다. 사용자 계정 키는 부모 values의 `grafana.adminUser: admin`입니다. 비밀번호는 Secret에서 읽습니다.
 
-- Pod 상태 확인
+Ingress는 `grafana.ingress.enabled: false`입니다.
 
-```bash
-$ watch -d 'kubectl get pods' 
-NAME                                                     READY   STATUS    RESTARTS   AGE     IP            NODE                                              NOMINATED NODE   READINES
-S GATES
-alertmanager-platform-kube-prometheus-stac-alertmanager-0   2/2     Running   0          3h55m   10.244.1.55   platform-monitoring-package-cluster-worker3         <none>           <none>
-loki-backend-0                                           2/2     Running   0          3h55m   10.244.1.57   platform-monitoring-package-cluster-worker3         <none>           <none>
-loki-backend-1                                           2/2     Running   0          3h55m   10.244.3.64   platform-monitoring-package-cluster-worker          <none>           <none>
-loki-backend-2                                           2/2     Running   0          3h55m   10.244.2.62   platform-monitoring-package-cluster-worker2         <none>           <none>
-loki-canary-25689                                        1/1     Running   0          3h55m   10.244.1.48   platform-monitoring-package-cluster-worker3         <none>           <none>
-loki-canary-bxg75                                        1/1     Running   0          3h55m   10.244.3.56   platform-monitoring-package-cluster-worker          <none>           <none>
-loki-canary-kg5lk                                        1/1     Running   0          3h55m   10.244.2.53   platform-monitoring-package-cluster-worker2         <none>           <none>
-loki-gateway-6dd67c775f-q92k6                            1/1     Running   0          3h55m   10.244.2.56   platform-monitoring-package-cluster-worker2         <none>           <none>
-loki-read-56979dc7-4q2qf                                 1/1     Running   0          3h55m   10.244.2.59   platform-monitoring-package-cluster-worker2         <none>           <none>
-loki-read-56979dc7-4zjwf                                 1/1     Running   0          3h55m   10.244.1.50   platform-monitoring-package-cluster-worker3         <none>           <none>
-loki-read-56979dc7-w5mm6                                 1/1     Running   0          3h55m   10.244.3.58   platform-monitoring-package-cluster-worker          <none>           <none>
-loki-write-0                                             1/1     Running   0          3h55m   10.244.2.54   platform-monitoring-package-cluster-worker2         <none>           <none>
-loki-write-1                                             1/1     Running   0          3h55m   10.244.1.53   platform-monitoring-package-cluster-worker3         <none>           <none>
-loki-write-2                                             1/1     Running   0          3h55m   10.244.3.61   platform-monitoring-package-cluster-worker          <none>           <none>
-prometheus-platform-kube-prometheus-stac-prometheus-0       2/2     Running   0          3h55m   10.244.2.61   platform-monitoring-package-cluster-worker2         <none>           <none>
-platform-grafana-884c8686c-njfqc                            3/3     Running   0          3h55m   10.244.3.60   platform-monitoring-package-cluster-worker          <none>           <none>
-platform-grafana-agent-operator-6b6787c65-mqpx2             1/1     Running   0          3h55m   10.244.3.57   platform-monitoring-package-cluster-worker          <none>           <none>
-platform-kube-prometheus-stac-operator-855fdbbdb4-x2wqg     1/1     Running   0          3h55m   10.244.2.55   platform-monitoring-package-cluster-worker2         <none>           <none>
-platform-kube-state-metrics-77ff7dffb6-prftv                1/1     Running   0          3h55m   10.244.1.49   platform-monitoring-package-cluster-worker3         <none>           <none>
-platform-loki-logs-64z92                                    2/2     Running   0          3h55m   10.244.1.54   platform-monitoring-package-cluster-worker3         <none>           <none>
-platform-loki-logs-6s6zc                                    2/2     Running   0          3h55m   10.244.3.63   platform-monitoring-package-cluster-worker          <none>           <none>
-platform-loki-logs-cgzft                                    2/2     Running   0          3h55m   10.244.2.60   platform-monitoring-package-cluster-worker2         <none>           <none>
-platform-prometheus-node-exporter-2sdz2                     1/1     Running   0          3h55m   172.18.0.2    platform-monitoring-package-cluster-worker2         <none>           <none>
-platform-prometheus-node-exporter-fq4rx                     1/1     Running   0          3h55m   172.18.0.4    platform-monitoring-package-cluster-worker3         <none>           <none>
-platform-prometheus-node-exporter-h2wb7                     1/1     Running   0          3h55m   172.18.0.3    platform-monitoring-package-cluster-control-plane   <none>           <none>
-platform-prometheus-node-exporter-wv56z                     1/1     Running   0          3h55m   172.18.0.5    platform-monitoring-package-cluster-worker          <none>           <none>
-platform-promtail-2qcd8                                     1/1     Running   0          3h55m   10.244.2.58   platform-monitoring-package-cluster-worker2         <none>           <none>
-platform-promtail-qplnh                                     1/1     Running   0          3h55m   10.244.0.14   platform-monitoring-package-cluster-control-plane   <none>           <none>
-platform-promtail-sjxff                                     1/1     Running   0          3h55m   10.244.1.51   platform-monitoring-package-cluster-worker3         <none>           <none>
-platform-promtail-svvg2                                     1/1     Running   0          3h55m   10.244.3.59   platform-monitoring-package-cluster-worker          <none>           <none>
-```
+### 4. 커스텀 대시보드
 
----
+실제로 연결된 파일은 `kube-prometheus-stack/charts/grafana/dashboards/test/test-dashboard.json`입니다. 대시보드 제목은 `Merged Kubernetes Dashboard`, uid는 `N9uZBy8Wz`, Grafana 버전 표기는 `11.3.1`입니다. 패널은 Prometheus datasource를 쓰며, namespace 메모리, etcd, kubelet, 노드, API server 상태를 포함합니다.
 
-## 2-4. 커스텀 Json 파일 불러오기
+같은 제목과 uid의 `charts/grafana/dashboards/custom-dashboard.json`도 있지만, values에서 그 경로를 가리키는 항목은 주석입니다.
 
-- 커스텀 한 Json 파일 : test-dasboard.json
-- 기본적으로 아래와 같이 대시보드 리스트가 출력 됌.
-
-![image.png](attachment:62b144f3-d9c1-4508-86b9-c4d6dfd4f8ae:image.png)
-
----
-
-- Prometheus Helm Chart 내의 서브차트 Grafana 경로 : `kube-prometheus-stack/charts/grafana/`
-
-```bash
-$ ll
-total 240
--rw-r--r--   1 user  staff   932B  2 24 17:33 Chart.yaml
--rw-r--r--   1 user  staff    59K  2 24 17:33 README.md
-drwxr-xr-x  11 user  staff   352B  2 24 17:33 ci
-drwxr-xr-x   4 user  staff   128B  2 25 10:26 dashboards. # 커스텀 Json 파일 or 자동으로 불러오고 싶은 Json 파일을 넣어준다.
-drwxr-xr-x  36 user  staff   1.1K  2 24 17:33 templates
--rw-r--r--   1 user  staff    53K  2 25 10:42 values.yaml # 실제 옵션값 등을 설정하는 파일이다.
-```
-
----
-
-- vi values.yaml
-    - sample yaml
+Grafana 서브차트 `values.yaml`에 들어 있는 provisioning입니다.
 
 ```yaml
-# 폴더 생성 할때 적용
 dashboardProviders:
   dashboardproviders.yaml:
     apiVersion: 1
     providers:
-    - name: 'test-dashboard' # 프로바이더의 고유 이름 (ConfigMap 이름과 관련됨)
-      orgId: 1. 
-      folder: TEST  # Grafana UI에서 대시보드가 저장될 폴더명
+    - name: 'test-dashboard'
+      orgId: 1
+      folder: TEST
       type: file
       disableDeletion: false
       editable: true
       options:
-        path: /var/lib/grafana/dashboards/test-dashboard   # Grafana 컨테이너 내부에서 대시보드를 찾을 경로
-      
-# JSON을 기본적으로 불러올때 적용  
-dashboards: 
-  test-dashboard: # ConfigMap의 이름이 될 값 (RFC 1123 규칙을 따르므로 소문자 사용)
-    TEST:  # Grafana에서 폴더명 (위 `folder: TEST`와 매칭됨)
-      file: dashboards/test/test-dashboard.json  # 대시보드 JSON 파일의 경로 (Helm Chart 내 상대 경로)
+        path: /var/lib/grafana/dashboards/test-dashboard
+
+dashboards:
+  test-dashboard:
+    TEST:
+      file: dashboards/test/test-dashboard.json
 ```
 
-- 실제 yaml
+부모 `values.yaml`은 이와 별도로 Grafana dashboard sidecar를 켭니다.
 
 ```yaml
-dashboardProviders:
-  dashboardproviders.yaml:
-    apiVersion: 1
-    providers:
-      - name: 'kubernetes-basic'
-        orgId: 1
-        folder: '1.Kubernetes Basic Component'
-        type: file
-        disableDeletion: false
-        editable: true
-        options:
-          path: /var/lib/grafana/dashboards/kubernetes-basic
-      - name: 'platform-component'
-        orgId: 1
-        folder: '2.Platform Component'
-        type: file
-        disableDeletion: false
-        editable: true
-        options:
-          path: /var/lib/grafana/dashboards/platform-component
-      - name: 'pv-and-pvc'
-        orgId: 1
-        folder: '3.PV And PVC'
-        type: file
-        disableDeletion: false
-        editable: true
-        options:
-          path: /var/lib/grafana/dashboards/pv-and-pvc
-      - name: 'read-write-io'
-        orgId: 1
-        folder: '4.Read,Write IO'
-        type: file
-        disableDeletion: false
-        editable: true
-        options:
-          path: /var/lib/grafana/dashboards/read-write-io
-      - name: 'log-monitoring'
-        orgId: 1
-        folder: '5.Log Monitoring'
-        type: file
-        disableDeletion: false
-        editable: true
-        options:
-          path: /var/lib/grafana/dashboards/log-monitoring
-
-dadashboards:
-  kubernetes-basic:
-    cni-cilium:
-      file: dashboards/1_Kubernetes_basic_component/1_CNI_cilium/_Platform Monitoring - CNI Cilium-1736922127493.json
-    kubernetes-components-etcd:
-      file: dashboards/1_Kubernetes_basic_component/2_Kubernetes_Components&ETCD/Platform Monitoring - Kubernetes Components _ ETCD-1736922182325.json
-    node:
-      file: dashboards/1_Kubernetes_basic_component/3_Node/Platform Monitoring - Node-1736922218337.json
-  platform-component:
-    platform-service-monitoring:
-      file: dashboards/2_Platform_Component/Platform-Service-Mornitoring-0114.json
-  pv-and-pvc:
-    persistent-volume:
-      file: dashboards/3_PV_And_PVC/Platform Persistent Volume-1736831599206.json
-  read-write-io:
-    disk-io:
-      file: dashboards/4_Read,Write_IO/Disk I_O-1736831654928.json
-  log-monitoring:
-    kubernetes-pod-log:
-      file: dashboards/5_LogMonitoring/Kubernetes_Pod_Log/Kubernetes Pod Log-1736929150756.json
-    pod-dashboard:
-      file: dashboards/5_LogMonitoring/pod-dashboard-1736831697142.json
+grafana:
+  defaultDashboardsEnabled: true
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
 ```
 
----
+kube-prometheus-stack이 만드는 기본 대시보드 ConfigMap과, Loki 차트의 `monitoring.dashboards.enabled: true` ConfigMap은 라벨 `grafana_dashboard: "1"`을 사용합니다.
 
-- value.yaml 수정 후 패키징
-
-```yaml
-# 패키징 
-$ helm package .
-Successfully packaged chart and saved it to: /Users/user/work/Helm/Helm-Chart-package/kube-prometheus-stack/charts/grafana/grafana-8.9.1.tgz
-
-# tgz 파일 생성 된 거 확인 
-$ ls | grep grafana-8.9.1.tgz
-grafana-8.9.1.tgz
-
-# 상위 경로로 이동
-$ mv grafana-8.9.1.tgz ..
-
-$ cd ..
-$ ll
-total 632
-drwxr-xr-x   7 user  staff   224B  2 24 17:33 crds
-drwxr-xr-x  10 user  staff   320B  2 25 11:09 grafana
--rw-r--r--   1 user  staff    55K  2 25 10:42 grafana-8.9.1.tgz
-drwxr-xr-x   7 user  staff   224B  2 24 17:33 kube-state-metrics
--rw-r--r--   1 user  staff    14K  2 24 17:33 kube-state-metrics-5.29.0.tgz
-drwxr-xr-x  13 user  staff   416B  2 24 17:33 loki
--rw-r--r--   1 user  staff   185K  2 24 17:33 loki-5.43.0.tgz
-drwxr-xr-x   8 user  staff   256B  2 24 17:33 metrics-server
--rw-r--r--   1 user  staff   6.1K  2 24 17:33 metrics-server-3.8.0.tgz
-drwxr-xr-x   8 user  staff   256B  2 24 17:33 prometheus-node-exporter
--rw-r--r--   1 user  staff    20K  2 24 17:33 prometheus-node-exporter-4.43.1.tgz
-drwxr-xr-x   9 user  staff   288B  2 24 17:33 promtail
--rw-r--r--   1 user  staff    17K  2 24 17:33 promtail-6.15.0.tgz
-
-# 이렇게 하는 이유는 helm chart 는 tgz 파일을 읽어들이기 떄문
-```
-
----
-
-- 최상위 경로(`kube-prometheus-stack`) 의 value.yaml 이 있는곳에서 helm install
-
-```yaml
-$ helm install prometheus . 
-NAME: prometheus
-LAST DEPLOYED: Tue Feb 25 11:12:20 2025
-NAMESPACE: monitoring
-STATUS: deployed
-REVISION: 1
-NOTES:
-platform-prometheus-stack has been installed. Check its status by running:
-  kubectl --namespace monitoring get pods -l "release=prometheus"
-
-Get Grafana 'admin' user password by running:
-
-  kubectl --namespace monitoring get secrets prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
-
-Access Grafana local instance:
-
-  export POD_NAME=$(kubectl --namespace monitoring get pod -l "app.kubernetes.io/name=grafana,app.kubernetes.io/instance=prometheus" -oname)
-  kubectl --namespace monitoring port-forward $POD_NAME 3000
-
-Visit https://github.com/prometheus-operator/kube-prometheus for instructions on how to create & configure Alertmanager and Prometheus instances using the Operator.
-
-# 헬름 설치 완료 및 조회 
-$ helm list
-NAME      	NAMESPACE 	REVISION	UPDATED                            	STATUS  	CHART                        	APP VERSION
-prometheus	monitoring	1       	2025-02-25 11:12:20.66148 +0900 KST	deployed	platform-prometheus-stack-69.3.1	v0.80.0
-```
-
----
-
-- 그라파나 포트포워딩
+대시보드 JSON을 서브차트에 넣은 뒤 메모에 있던 재패키징 순서입니다. 경로는 차트 루트 `kube-prometheus-stack/` 기준입니다.
 
 ```bash
-$ kubectl get svc -n monitoring | grep grafana
-prometheus-grafana                        ClusterIP   10.96.194.145   <none>        80/TCP                       95s
-
-# grafana 포트가 80 이므로 3000으로 받아서 80으로 보내도록 
-$ kubectl port-forward svc/prometheus-grafana 3000:80
-Forwarding from 127.0.0.1:3000 -> 3000
-Forwarding from [::1]:3000 -> 3000
+cd charts/grafana
+helm package .
+mv grafana-8.9.1.tgz ..
+cd ../..
+helm install prometheus .
 ```
 
----
+## 설정 메모
 
-- 그라파나 접속 후 대시보드 확인
-    - TEST 폴더 생성 확인 및 하위에 JSON 파일 확인 가능
+- Grafana 서브차트에 대시보드를 더 넣을 때는 `dashboardProviders`의 `path`가 `/var/lib/grafana/dashboards/<provider name>`이어야 합니다. `dashboards`의 첫 키는 provider 이름과 같아야 하고, `file`은 차트 안의 상대 경로입니다.
+- 부모 차트는 Prometheus datasource 이름 `Prometheus`, uid `prometheus`, Alertmanager datasource를 sidecar로 만듭니다. Loki를 Grafana datasource로 등록하는 값은 없습니다.
+- Promtail 기본 client는 `http://loki-gateway/loki/api/v1/push`입니다. gateway Service 이름은 `loki-gateway`이고, 템플릿은 release 이름을 붙이지 않습니다. 같은 namespace의 짧은 DNS 이름과 맞습니다.
+- Loki `loki.storage.type`은 `s3`이고 `endpoint`, `region`, `accessKeyId`, `secretAccessKey`는 `null`입니다. `minio.enabled`는 `false`입니다. `loki.auth_enabled`는 `true`이고 `loki.tenants`는 비어 있습니다. gateway `basicAuth.enabled`는 `false`입니다.
+- `monitoring.selfMonitoring.enabled`와 `monitoring.lokiCanary.enabled`는 `true`입니다. Loki chart의 `test.enabled`도 `true`이고, `test.prometheusAddress`는 `http://prometheus:9090`입니다.
+- node-exporter는 부모 values에서 Linux, AIX, Darwin 수집이 켜져 있고, mountpoint와 fstype exclude 인자가 들어 있습니다.
+- `.helmignore`는 패키징 시 `README.md`, `ci/`, `kube-prometheus-*.tgz` 등을 제외합니다.
+
+## 트러블슈팅
+
+차트와 작업 메모를 대조하면 아래가 드러납니다. 코드를 고쳐 확인한 런타임 증상은 아닙니다.
+
+- **메모의 설치 기록이 한 흐름이 아닙니다.** tgz 설치 release는 `platform-monitoring`입니다. Pod 목록의 이름 접두사는 `platform-kube-prometheus-stac`으로, release `platform`와 당시 차트 이름 `kube-prometheus-stack`을 fullname 26자에 맞춘 형태입니다 (`templates/_helpers.tpl`). 이후 `helm list`는 release `prometheus`, chart `platform-prometheus-stack-69.3.1`입니다. 노드 표에는 control-plane, worker, worker2만 있고 Pod 목록에는 worker3이 있습니다.
+- **대시보드 목록이 차트와 다릅니다.** 메모에는 `1.Kubernetes Basic Component`부터 `5.Log Monitoring`까지 다섯 provider와 `dadashboards` 키가 적혀 있습니다. 커밋된 키는 `dashboards`이고, 연결된 JSON은 `test-dashboard` / 폴더 `TEST` 하나입니다. 메모의 `attachment:` 이미지는 저장소에 없습니다.
+- **Grafana sidecar와 file provider가 같이 켜져 있습니다.** Grafana 서브차트 주석은 sidecar를 `dashboardProviders`, `datasources`, `dashboards`와 함께 쓰지 않는다고 적습니다. 부모 values는 dashboard sidecar를 `enabled: true`로 두고, 서브차트 values는 `dashboardProviders`를 설정합니다.
+- **대시보드 JSON의 datasource uid.** 파일은 Grafana import용 `__inputs`와 `${DS_PROMETHEUS}`를 사용합니다. 부모 차트가 만드는 Prometheus datasource uid는 `prometheus`입니다.
+- **Loki 스토리지.** `storage.type: s3`라서 scalable target 조건은 만족합니다. endpoint와 자격 증명은 비어 있고 MinIO 서브차트는 꺼져 있습니다. 스토리지를 filesystem으로 바꾸면서 `singleBinary.replicas`를 0으로 두면 `charts/loki/templates/validate.yaml`이 `Cannot run Scalable targets (backend, read, write) without an object storage backend.`로 렌더를 멈춥니다.
+- **kube-etcd ServiceMonitor 키가 두 번 있습니다.** `kube-prometheus-stack/values.yaml`의 `kubeEtcd` 아래에 `serviceMonitor`가 두 번 나옵니다. 앞 블록은 `scheme: https`와 etcd 클라이언트 인증서 경로이고, 뒤 블록은 `enabled: true`, `scheme: http`, 빈 `caFile` / `certFile` / `keyFile`입니다.
+- **kube-state-metrics의 NodePort 위치.** `charts/kube-state-metrics/values.yaml`의 `prometheus.monitor` 아래에 `server.type: NodePort`, `nodePort: 30090`이 있습니다. Service 템플릿은 `.Values.service.type`과 `.Values.service.nodePort`를 읽습니다. 부모 values는 `kube-state-metrics.prometheus.monitor.enabled: true`만 덮어씁니다.
+- **Promtail 버전 표기.** chart `appVersion`은 `2.8.3`이고 이미지 태그는 `3.0.0`입니다.
+- **Helm test와 Prometheus 주소.** Loki `test.prometheusAddress`는 `http://prometheus:9090`으로 고정되어 있습니다. release 이름이 `prometheus`가 아니면 이 주소와 Service 이름이 어긋납니다.
+
+## 업스트림
+
+서브차트 README와 템플릿은 가져온 업스트림 차트입니다. 이 저장소에서 차트 메타데이터와 values에 손으로 들어간 변경은 다음입니다.
+
+- 차트 이름을 `platform-prometheus-stack`으로 변경
+- Loki, Promtail, metrics-server를 `file://` 의존성으로 추가
+- Grafana `dashboardProviders`와 `dashboards/test/test-dashboard.json`
+- `kubeEtcd.serviceMonitor` 예시 블록을 주석 밖으로 이동
+- kube-state-metrics `prometheus.monitor`에 `server` 항목 추가
